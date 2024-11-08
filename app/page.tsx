@@ -1,7 +1,7 @@
 "use client";
 
 import { type FC, useState } from 'react';
-import { Search, Sparkles } from 'lucide-react';
+import { Search, Sparkles, ChevronRight } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -55,6 +55,31 @@ const SearchApp: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<SearchStats | null>(null);
   const [queryTime, setQueryTime] = useState<number | null>(null);
+  const [totalTime, setTotalTime] = useState<number | null>(null);
+
+  const formatAsBreadcrumbs = (url: string) => {
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split(/\/|\?/).filter(part => part);
+      
+      return (
+        <div className="flex items-center text-sm text-gray-600 overflow-x-auto">
+          <span className="text-gray-500">{urlObj.hostname}</span>
+          {pathParts.length > 0 && <ChevronRight className="w-4 h-4 mx-1 text-gray-400" />}
+          {pathParts.map((part, index) => (
+            <div key={index} className="flex items-center">
+              <span className="hover:text-gray-800">{decodeURIComponent(part)}</span>
+              {index < pathParts.length && (
+                <ChevronRight className="w-4 h-4 mx-1 text-gray-400" />
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    } catch {
+      return <span className="text-sm text-gray-600">{url}</span>;
+    }
+  };
 
   const handleSearch = async (): Promise<void> => {
     if (!query.trim()) return;
@@ -65,12 +90,14 @@ const SearchApp: FC = () => {
     setQueryTime(null);
 
     try {
+      const reqTime = Date.now();
+      setTotalTime(null);
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query,
-          limit: 15,
+          limit: 30,
           titleWeight: 1.5,
           contentWeight: 1.2,
           matchPhrase: true,
@@ -85,6 +112,7 @@ const SearchApp: FC = () => {
       const data = await response.json() as SearchResponse;
       setResults(data.results);
       setQueryTime(data.query_time_ms);
+      setTotalTime(Date.now() - reqTime);
 
       try {
         const statsResponse = await fetch('/api/stats');
@@ -106,10 +134,6 @@ const SearchApp: FC = () => {
     if (e.key === 'Enter') {
       handleSearch();
     }
-  };
-
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString();
   };
 
   return (
@@ -148,10 +172,15 @@ const SearchApp: FC = () => {
 
         {/* Search Controls */}
         <div className="flex flex-wrap items-center gap-4 px-1">
-
           {queryTime && (
             <span className="text-sm text-gray-500 ml-auto">
-              {queryTime}ms
+              DB Query: {queryTime}ms
+            </span>
+          )}
+
+          {totalTime && (
+            <span className="text-sm text-gray-500">
+              Total TIme: {totalTime}ms
             </span>
           )}
         </div>
@@ -171,27 +200,34 @@ const SearchApp: FC = () => {
               <Card key={index} className="overflow-hidden hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
                   <div className="space-y-3">
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="space-y-1 min-w-0">
-                        <a
-                          href={result.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:text-blue-800 font-medium block truncate"
-                          dangerouslySetInnerHTML={{ __html: result.title.text }}
-                        />
-                        <div className="flex gap-2 items-center flex-wrap">
-                          <Badge variant="secondary" className="bg-blue-50 text-blue-700">
-                            {LANGUAGE_NAMES[result.title.language] || result.title.language}
-                          </Badge>
-                          <span className="text-sm text-gray-500">
-                            {result.domain} • {formatDate(result.timestamp)}
-                          </span>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="space-y-1 min-w-0">
+                          <a
+                            href={result.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 font-medium block truncate"
+                            dangerouslySetInnerHTML={{ __html: result.title.text }}
+                          />
+                          <div className="flex gap-2 items-center flex-wrap">
+                            <Badge variant="secondary" className="bg-blue-50 text-blue-700">
+                              {LANGUAGE_NAMES[result.title.language] || result.title.language}
+                            </Badge>
+                          </div>
                         </div>
+                        <Badge variant="outline" className="shrink-0">
+                          {result.score.toFixed(2)}
+                        </Badge>
                       </div>
-                      <Badge variant="outline" className="shrink-0">
-                        {result.score.toFixed(2)}
-                      </Badge>
+                      <a
+                        href={result.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {formatAsBreadcrumbs(result.url)}
+                      </a>
                     </div>
                     <p 
                       className="text-gray-600 text-sm line-clamp-3" 
