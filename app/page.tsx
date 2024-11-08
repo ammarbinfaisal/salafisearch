@@ -54,7 +54,7 @@ const SearchApp: FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<SearchStats | null>(null);
-  const [matchPhrase, setMatchPhrase] = useState(false);
+  const [matchPhrase, setMatchPhrase] = useState(true);
   const [queryTime, setQueryTime] = useState<number | null>(null);
 
   const handleSearch = async (): Promise<void> => {
