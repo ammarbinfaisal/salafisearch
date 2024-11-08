@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { Client } from '@elastic/elasticsearch'
 import { HfInference } from '@huggingface/inference'
 import { z } from 'zod'
-import * as langdetect from 'langdetect';
 
 // Initialize clients
 const hf = new HfInference(process.env.HUGGINGFACE_API_TOKEN)
