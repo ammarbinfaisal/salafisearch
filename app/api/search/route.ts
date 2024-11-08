@@ -17,16 +17,16 @@ const MODEL_ID = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
 const INDEX_NAME = 'multilingual_content'
 const SUPPORTED_LANGUAGES = ['en', 'ar']
 
-// Validation schema
+// Updated validation schema with PageRank weight
 const searchRequestSchema = z.object({
     query: z.string().min(1).max(500),
     limit: z.number().optional().default(10),
     titleWeight: z.number().optional().default(1.5),
     contentWeight: z.number().optional().default(1.0),
+    pageRankWeight: z.number().optional().default(0.5),
     matchPhrase: z.boolean().optional().default(false),
     language: z.string().optional(),
 })
-
 
 export async function POST(req: Request) {
     try {
@@ -37,6 +37,7 @@ export async function POST(req: Request) {
             limit,
             titleWeight,
             contentWeight,
+            pageRankWeight,
             matchPhrase = false,
         } = searchRequestSchema.parse(body)
 
@@ -46,93 +47,120 @@ export async function POST(req: Request) {
             inputs: query
         })
 
+        // Build the base query without PageRank
+        const baseQuery = {
+            bool: {
+                should: [
+                    // Text matches on title
+                    {
+                        bool: {
+                            should: [
+                                // Original title match
+                                matchPhrase ? {
+                                    match_phrase: {
+                                        "title.original": {
+                                            query,
+                                            boost: titleWeight * 2
+                                        }
+                                    }
+                                } : {
+                                    match: {
+                                        "title.original": {
+                                            query,
+                                            boost: titleWeight * 2,
+                                            fuzziness: "AUTO"
+                                        }
+                                    }
+                                },
+                                // Title translations matches
+                                ...SUPPORTED_LANGUAGES.map(lang => ({
+                                    match: {
+                                        [`title.translations.${lang}`]: {
+                                            query,
+                                            boost: titleWeight,
+                                            fuzziness: "AUTO"
+                                        }
+                                    }
+                                }))
+                            ],
+                        }
+                    },
+                    // Text matches on content
+                    {
+                        bool: {
+                            should: [
+                                // Original content match
+                                matchPhrase ? {
+                                    match_phrase: {
+                                        "content.original": {
+                                            query,
+                                            boost: contentWeight
+                                        }
+                                    }
+                                } : {
+                                    match: {
+                                        "content.original": {
+                                            query,
+                                            boost: contentWeight,
+                                            fuzziness: "AUTO"
+                                        }
+                                    }
+                                },
+                                // Content translations matches
+                                ...SUPPORTED_LANGUAGES.map(lang => ({
+                                    match: {
+                                        [`content.translations.${lang}`]: {
+                                            query,
+                                            boost: contentWeight,
+                                            fuzziness: "AUTO"
+                                        }
+                                    }
+                                }))
+                            ]
+                        }
+                    },
+                    // Vector similarity on title
+                    {
+                        script_score: {
+                            query: { match_all: {} },
+                            script: {
+                                source: "cosineSimilarity(params.query_vector, 'title.vector') + 1.0",
+                                params: { query_vector: queryEmbedding }
+                            }
+                        }
+                    }
+                ],
+                minimum_should_match: 1
+            }
+        }
+
         // Build the search query
         const searchQuery = {
             index: INDEX_NAME,
             size: limit,
             query: {
-                bool: {
-                    should: [
-                        // Text matches on title
-                        {
-                            bool: {
-                                should: [
-                                    // Original title match
-                                    matchPhrase ? {
-                                        match_phrase: {
-                                            "title.original": {
-                                                query,
-                                                boost: titleWeight * 2
-                                            }
-                                        }
-                                    } : {
-                                        match: {
-                                            "title.original": {
-                                                query,
-                                                boost: titleWeight * 2,
-                                                fuzziness: "AUTO"
-                                            }
-                                        }
-                                    },
-                                    // Title translations matches
-                                    ...SUPPORTED_LANGUAGES.map(lang => ({
-                                        match: {
-                                            [`title.translations.${lang}`]: {
-                                                query,
-                                                boost: titleWeight,
-                                                fuzziness: "AUTO"
-                                            }
-                                        }
-                                    }))
-                                ],
-                            }
-                        },
-                        // Text matches on content
-                        {
-                            bool: {
-                                should: [
-                                    // Original content match
-                                    matchPhrase ? {
-                                        match_phrase: {
-                                            "content.original": {
-                                                query,
-                                                boost: contentWeight
-                                            }
-                                        }
-                                    } : {
-                                        match: {
-                                            "content.original": {
-                                                query,
-                                                boost: contentWeight,
-                                                fuzziness: "AUTO"
-                                            }
-                                        }
-                                    },
-                                    // Content translations matches
-                                    ...SUPPORTED_LANGUAGES.map(lang => ({
-                                        match: {
-                                            [`content.translations.${lang}`]: {
-                                                query,
-                                                boost: contentWeight,
-                                                fuzziness: "AUTO"
-                                            }
-                                        }
-                                    }))
-                                ]
-                            }
-                        },
-                        // Vector similarity on title
+                function_score: {
+                    query: baseQuery,
+                    functions: [
                         {
                             script_score: {
-                                query: { match_all: {} },
                                 script: {
-                                    source: "cosineSimilarity(params.query_vector, 'title.vector') + 1.0",
-                                    params: { query_vector: queryEmbedding }
+                                    source:`
+                                        if (doc.containsKey('pagerank_score')) {
+                                            return doc['pagerank_score'].value * params.pagerank_weight;
+                                        }
+                                        return 1.0;
+                                    `,
+                                    params: {
+                                        pagerank_weight: pageRankWeight
+                                    }
                                 }
-                            }
+                            },
+                            weight: pageRankWeight
                         }
                     ],
-                    minimum_should_match: 1
+                    score_mode: "sum",
+                    boost_mode: "multiply"
                 }
             },
             highlight: {
@@ -234,7 +262,8 @@ export async function POST(req: Request) {
                 available_translations: Object.keys(source.content.translations || {}),
                 domain: source.domain,
                 timestamp: source.timestamp,
-                score: hit._score || 0
+                score: hit._score || 0,
+                pagerank_score: source.pagerank_score || null // Make PageRank score optional
             }
         })
 
