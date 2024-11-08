@@ -67,7 +67,7 @@ const SearchApp: FC = () => {
         setQuery(q);
       }
     }
-  })
+  }, []);
 
   const formatAsBreadcrumbs = (url: string) => {
     try {
