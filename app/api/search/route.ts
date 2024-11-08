@@ -28,8 +28,6 @@ export async function POST(req: NextRequest) {
                         acc[`content.translations.${lang}`] = { fragment_size: 150, number_of_fragments: 1 };
                         return acc;
                     }, {}),
-                    pre_tags: ['<em>'],
-                    post_tags: ['</em>'],
                     max_analyzed_offset: 500000
                 },
                 _source: ['url', 'original_language', 'title', 'content', 'domain', 'timestamp'],
