@@ -17,15 +17,12 @@ const MODEL_ID = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
 const INDEX_NAME = 'multilingual_content'
 const SUPPORTED_LANGUAGES = ['en', 'ar']
 
-// Updated validation schema with PageRank weight
+// Validation schema
 const searchRequestSchema = z.object({
     query: z.string().min(1).max(500),
     limit: z.number().optional().default(10),
     titleWeight: z.number().optional().default(1.5),
     contentWeight: z.number().optional().default(1.0),
-    pageRankWeight: z.number().optional().default(0.5),
-    matchPhrase: z.boolean().optional().default(false),
-    language: z.string().optional(),
 })
 
 export async function POST(req: Request) {
@@ -37,8 +34,6 @@ export async function POST(req: Request) {
             limit,
             titleWeight,
             contentWeight,
-            pageRankWeight,
-            matchPhrase = false,
         } = searchRequestSchema.parse(body)
 
         // Generate query embedding using Hugging Face
@@ -47,120 +42,92 @@ export async function POST(req: Request) {
             inputs: query
         })
 
-        // Build the base query without PageRank
-        const baseQuery = {
-            bool: {
-                should: [
-                    // Text matches on title
-                    {
-                        bool: {
-                            should: [
-                                // Original title match
-                                matchPhrase ? {
-                                    match_phrase: {
-                                        "title.original": {
-                                            query,
-                                            boost: titleWeight * 2
-                                        }
-                                    }
-                                } : {
-                                    match: {
-                                        "title.original": {
-                                            query,
-                                            boost: titleWeight * 2,
-                                            fuzziness: "AUTO"
-                                        }
-                                    }
-                                },
-                                // Title translations matches
-                                ...SUPPORTED_LANGUAGES.map(lang => ({
-                                    match: {
-                                        [`title.translations.${lang}`]: {
-                                            query,
-                                            boost: titleWeight,
-                                            fuzziness: "AUTO"
-                                        }
-                                    }
-                                }))
-                            ],
-                        }
-                    },
-                    // Text matches on content
-                    {
-                        bool: {
-                            should: [
-                                // Original content match
-                                matchPhrase ? {
-                                    match_phrase: {
-                                        "content.original": {
-                                            query,
-                                            boost: contentWeight
-                                        }
-                                    }
-                                } : {
-                                    match: {
-                                        "content.original": {
-                                            query,
-                                            boost: contentWeight,
-                                            fuzziness: "AUTO"
-                                        }
-                                    }
-                                },
-                                // Content translations matches
-                                ...SUPPORTED_LANGUAGES.map(lang => ({
-                                    match: {
-                                        [`content.translations.${lang}`]: {
-                                            query,
-                                            boost: contentWeight,
-                                            fuzziness: "AUTO"
-                                        }
-                                    }
-                                }))
-                            ]
-                        }
-                    },
-                    // Vector similarity on title
-                    {
-                        script_score: {
-                            query: { match_all: {} },
-                            script: {
-                                source: "cosineSimilarity(params.query_vector, 'title.vector') + 1.0",
-                                params: { query_vector: queryEmbedding }
-                            }
-                        }
-                    }
-                ],
-                minimum_should_match: 1
-            }
-        }
-
-        // Build the search query
+        // Build the search query to match the Python indexer's structure
         const searchQuery = {
             index: INDEX_NAME,
             size: limit,
             query: {
-                function_score: {
-                    query: baseQuery,
-                    functions: [
+                bool: {
+                    should: [
+                        // Text matches on title
+                        {
+                            bool: {
+                                should: [
+                                    // Original title match
+                                    {
+                                        match: {
+                                            "title.original": {
+                                                query,
+                                                boost: titleWeight * 2
+                                            }
+                                        }
+                                    },
+                                    // Title translations matches
+                                    ...SUPPORTED_LANGUAGES.map(lang => ({
+                                        match: {
+                                            [`title.translations.${lang}`]: {
+                                                query,
+                                                boost: titleWeight
+                                            }
+                                        }
+                                    }))
+                                ]
+                            }
+                        },
+                        // Text matches on content
+                        {
+                            bool: {
+                                should: [
+                                    // Original content match
+                                    {
+                                        match: {
+                                            "content.original": {
+                                                query,
+                                                boost: contentWeight
+                                            }
+                                        }
+                                    },
+                                    // Content translations matches
+                                    ...SUPPORTED_LANGUAGES.map(lang => ({
+                                        match: {
+                                            [`content.translations.${lang}`]: {
+                                                query,
+                                                boost: contentWeight
+                                            }
+                                        }
+                                    }))
+                                ]
+                            }
+                        },
+                        // Vector similarity scoring - matching Python indexer's structure
                         {
                             script_score: {
+                                query: { match_all: {} },
                                 script: {
-                                    source:`
-                                        if (doc.containsKey('pagerank_score')) {
-                                            return doc['pagerank_score'].value * params.pagerank_weight;
+                                    source: `
+                                        // Score title vector similarity
+                                        double titleScore = cosineSimilarity(params.query_vector, 'title.vector') * params.title_weight;
+                                        
+                                        // Score content chunks vector similarity
+                                        double maxChunkScore = 0;
+                                        if (doc.containsKey('content.chunks')) {
+                                            for (def chunk : doc['content.chunks']) {
+                                                double chunkScore = cosineSimilarity(params.query_vector, chunk.vector) * params.content_weight;
+                                                maxChunkScore = Math.max(maxChunkScore, chunkScore);
+                                            }
                                         }
-                                        return 1.0;
+                                        
+                                        return titleScore + maxChunkScore;
                                     `,
                                     params: {
-                                        pagerank_weight: pageRankWeight
+                                        query_vector: queryEmbedding,
+                                        title_weight: titleWeight,
+                                        content_weight: contentWeight
                                     }
                                 }
-                            },
-                            weight: pageRankWeight
+                            }
                         }
-                    ],
-                    score_mode: "sum",
-                    boost_mode: "multiply"
+                    ]
                 }
             },
             highlight: {
@@ -170,14 +137,14 @@ export async function POST(req: Request) {
                     'title.original': {},
                     'content.original': {
                         fragment_size: 150,
-                        number_of_fragments: 1
+                        number_of_fragments: 3
                     },
                     ...Object.fromEntries(
                         SUPPORTED_LANGUAGES.flatMap(lang => [
                             [`title.translations.${lang}`, {}],
                             [`content.translations.${lang}`, {
                                 fragment_size: 150,
-                                number_of_fragments: 1
+                                number_of_fragments: 3
                             }]
                         ])
                     )
@@ -187,17 +154,20 @@ export async function POST(req: Request) {
 
         const response = await es.search(searchQuery)
 
-        // Format results
+        // Format results to match the indexed document structure
         const results = response.hits.hits.map(hit => {
             const source = hit._source as any
             const highlight = hit.highlight || {}
 
-            // Get the best matching content version
+            // Get highlighted content, preferring chunked content matches
             const getHighlightedContent = () => {
-                // Check original content first
-                if (highlight['content.original']?.[0]) {
+                // Try to get highlight from chunks first
+                const contentHighlight = highlight['content.original']?.[0] ||
+                    source.content.chunks?.[0]?.text?.substring(0, 200)
+
+                if (contentHighlight) {
                     return {
-                        text: highlight['content.original'][0],
+                        text: contentHighlight,
                         language: source.original_language || 'unknown'
                     }
                 }
@@ -213,14 +183,12 @@ export async function POST(req: Request) {
                     }
                 }
 
-                // Fallback to original content
                 return {
                     text: source.content.original?.substring(0, 200) + '...',
-                    language: ''
+                    language: source.original_language || 'unknown'
                 }
             }
 
-            // Get the best matching title version
             const getHighlightedTitle = () => {
                 if (highlight['title.original']?.[0]) {
                     return {
@@ -249,6 +217,7 @@ export async function POST(req: Request) {
             const mainContent = getHighlightedContent()
 
             return {
+                id: hit._id,
                 url: source.url,
                 title: {
                     text: titleContent.text,
@@ -262,8 +231,7 @@ export async function POST(req: Request) {
                 available_translations: Object.keys(source.content.translations || {}),
                 domain: source.domain,
                 timestamp: source.timestamp,
-                score: hit._score || 0,
-                pagerank_score: source.pagerank_score || null // Make PageRank score optional
+                score: hit._score || 0
             }
         })
 
