@@ -3,13 +3,15 @@ import client from '@/lib/elasticsearch';
 
 export async function POST(req: NextRequest) {
     try {
-        const { query, size = 10, min_score = 0.5, language_weights } = await req.json();
+        const { query, size = 10, min_score = 0.5 } = await req.json();
+
+        const queryHasArabic = /[\u0600-\u06FF]/.test(query);
 
         const shouldClauses = [];
         const supportedLanguages = (process.env.SUPPORTED_LANGUAGES || 'en,ar').split(',');
 
         for (const lang of supportedLanguages) {
-            const weight = language_weights?.[lang] || 1.0;
+            const weight = lang === 'ar' && queryHasArabic ? 2 : 1;
             shouldClauses.push(
                 { match: { [`content.translations.${lang}`]: { query, boost: weight, minimum_should_match: "75%" } } },
                 { match: { [`title.translations.${lang}`]: { query, boost: weight * 1.5 } } }
