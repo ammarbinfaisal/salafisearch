@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { Client } from '@elastic/elasticsearch'
 import { HfInference } from '@huggingface/inference'
 import { z } from 'zod'
+import * as langdetect from 'langdetect';
 
 // Initialize clients
 const hf = new HfInference(process.env.HUGGINGFACE_API_TOKEN)
@@ -27,9 +28,6 @@ const searchRequestSchema = z.object({
     language: z.string().optional(),
 })
 
-const isArabic = (text: string) => {
-    return /[\u0600-\u06FF]/.test(text)
-}
 
 export async function POST(req: Request) {
     try {
@@ -41,7 +39,6 @@ export async function POST(req: Request) {
             titleWeight,
             contentWeight,
             matchPhrase = false,
-            language
         } = searchRequestSchema.parse(body)
 
         // Generate query embedding using Hugging Face
@@ -192,7 +189,7 @@ export async function POST(req: Request) {
                 // Fallback to original content
                 return {
                     text: source.content.original?.substring(0, 200) + '...',
-                    language: isArabic(source.content.original) ? 'ar' : 'en'
+                    language: ''
                 }
             }
 
@@ -201,7 +198,7 @@ export async function POST(req: Request) {
                 if (highlight['title.original']?.[0]) {
                     return {
                         text: highlight['title.original'][0],
-                        language: source.original_language || 'unknown'
+                        language: ''
                     }
                 }
 
@@ -217,7 +214,7 @@ export async function POST(req: Request) {
 
                 return {
                     text: source.title.original,
-                    language: isArabic(source.content.original) ? 'ar' : 'en'
+                    language: ''
                 }
             }
 

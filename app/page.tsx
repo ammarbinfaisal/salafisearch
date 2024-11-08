@@ -1,6 +1,6 @@
 "use client";
 
-import { type FC, useState } from 'react';
+import { type FC, useEffect, useState } from 'react';
 import { Search, Sparkles, ChevronRight } from 'lucide-react';
 import {
   Card,
@@ -9,8 +9,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Switch } from '@/components/ui/switch';
 import { Badge } from "@/components/ui/badge";
+import { useRouter } from 'next/navigation';
 
 interface SearchResult {
   url: string;
@@ -45,17 +45,29 @@ interface SearchStats {
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: "English",
-  ar: "Arabic"
+  ar: "Arabic",
+  ur: "Urdu",
 };
 
 const SearchApp: FC = () => {
-  const [query, setQuery] = useState('');
+  const router = useRouter();
+  const [query, setQuery] = useState<string | null>();
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<SearchStats | null>(null);
   const [queryTime, setQueryTime] = useState<number | null>(null);
   const [totalTime, setTotalTime] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get('q');
+      if (typeof q === 'string') {
+        setQuery(q);
+      }
+    }
+  })
 
   const formatAsBreadcrumbs = (url: string) => {
     try {
@@ -82,7 +94,8 @@ const SearchApp: FC = () => {
   };
 
   const handleSearch = async (): Promise<void> => {
-    if (!query.trim()) return;
+    if (!query || !query.trim()) return;
+    router.push(`/?q=${encodeURIComponent(query)}`);
 
     setLoading(true);
     setError(null);
@@ -146,14 +159,14 @@ const SearchApp: FC = () => {
           </div>
           <Input
             placeholder="Search across languages..."
-            value={query}
+            value={query || ''}
             onChange={(e) => setQuery(e.target.value)}
             onKeyUp={handleKeyPress}
             className="pl-10 h-12 text-lg shadow-sm"
           />
           <Button 
             onClick={handleSearch} 
-            disabled={loading || !query.trim()}
+            disabled={loading || (!query || !query.trim())}
             className="absolute right-1.5 top-1.5 h-9"
           >
             {loading ? (
