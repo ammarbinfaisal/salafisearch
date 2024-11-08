@@ -6,14 +6,14 @@ export async function GET() {
         const stats = await client.indices.stats({ index: 'multilingual_content' });
         const indexInfo = await client.indices.get({ index: 'multilingual_content' });
 
-        // @ts-ignore
+        // @ts-expect-error
         const documentCount = stats.indices.multilingual_content.total.docs.count;
         
-        // @ts-ignore
+        // @ts-expect-error
         const indexSizeBytes = stats.indices.multilingual_content.total.store.size_in_bytes;
 
 
-        // @ts-ignore
+        // @ts-expect-error
         const creationDate = new Date(parseInt(indexInfo.multilingual_content.settings.index.creation_date)).toISOString();
 
         return NextResponse.json({

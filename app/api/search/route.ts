@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
                 query: { bool: { should: shouldClauses, minimum_should_match: 1 } },
                 highlight: {
                     fields: supportedLanguages.reduce((acc, lang) => {
-                        // @ts-ignore
+                        // @ts-expect-error
                         acc[`content.translations.${lang}`] = { fragment_size: 150, number_of_fragments: 1 };
                         return acc;
                     }, {}),
@@ -39,34 +39,34 @@ export async function POST(req: NextRequest) {
         const hits = response.hits.hits;
         const results = hits.map(hit => {
             const source = hit._source;
-            // @ts-ignore
+            // @ts-expect-error
             const originalLanguage = source.original_language;
-            // @ts-ignore
+            // @ts-expect-error
             const snippet = hit.highlight?.[`content.translations.${originalLanguage}`]?.[0] || source.content.translations[originalLanguage].slice(0, 150) + '...';
             return {
-                // @ts-ignore
+                // @ts-expect-error
                 url: source.url,
                 score: hit._score,
-                // @ts-ignore
+                // @ts-expect-error
                 original_language: source.original_language,
-                // @ts-ignore
+                // @ts-expect-error
                 title: source.title.translations[originalLanguage] || '',
                 snippet,
-                // @ts-ignore
+                // @ts-expect-error
                 translations: source.content.translations,
-                // @ts-ignore
+                // @ts-expect-error
                 domain: source.domain,
-                // @ts-ignore
+                // @ts-expect-error
                 timestamp: new Date(source.timestamp).toISOString()
             };
         });
 
         return NextResponse.json({
             results,
-            // @ts-ignore
+            // @ts-expect-error
             total_hits: response.hits.total.value,
             query_time_ms: response.took,
-            // @ts-ignore
+            // @ts-expect-error
             matched_languages: [...new Set(hits.map(hit => hit._source.original_language))]
         });
     } catch (error) {
