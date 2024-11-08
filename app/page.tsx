@@ -54,7 +54,6 @@ const SearchApp: FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<SearchStats | null>(null);
-  const [matchPhrase, setMatchPhrase] = useState(true);
   const [queryTime, setQueryTime] = useState<number | null>(null);
 
   const handleSearch = async (): Promise<void> => {
@@ -74,7 +73,7 @@ const SearchApp: FC = () => {
           limit: 15,
           titleWeight: 1.5,
           contentWeight: 1.2,
-          matchPhrase,
+          matchPhrase: true,
           cache: true
         }),
       });
@@ -149,17 +148,6 @@ const SearchApp: FC = () => {
 
         {/* Search Controls */}
         <div className="flex flex-wrap items-center gap-4 px-1">
-          <div className="flex items-center space-x-2">
-            <Switch
-              checked={matchPhrase}
-              onCheckedChange={setMatchPhrase}
-              id="phrase-mode"
-              className="data-[state=checked]:bg-blue-600"
-            />
-            <label htmlFor="phrase-mode" className="text-sm text-gray-600">
-              Exact phrase
-            </label>
-          </div>
 
           {queryTime && (
             <span className="text-sm text-gray-500 ml-auto">
