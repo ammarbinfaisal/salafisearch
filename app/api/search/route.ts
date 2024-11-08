@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
                 query: { bool: { should: shouldClauses, minimum_should_match: 1 } },
                 highlight: {
                     fields: supportedLanguages.reduce((acc, lang) => {
-                        // @ts-expect-error
+                        // @ts-expect-error I expect error here, bruv
                         acc[`content.translations.${lang}`] = { fragment_size: 150, number_of_fragments: 1 };
                         return acc;
                     }, {}),
@@ -39,34 +39,34 @@ export async function POST(req: NextRequest) {
         const hits = response.hits.hits;
         const results = hits.map(hit => {
             const source = hit._source;
-            // @ts-expect-error
+            // @ts-expect-error I expect error here, bruv
             const originalLanguage = source.original_language;
-            // @ts-expect-error
+            // @ts-expect-error I expect error here, bruv
             const snippet = hit.highlight?.[`content.translations.${originalLanguage}`]?.[0] || source.content.translations[originalLanguage].slice(0, 150) + '...';
             return {
-                // @ts-expect-error
+                // @ts-expect-error I expect error here, bruv
                 url: source.url,
                 score: hit._score,
-                // @ts-expect-error
+                // @ts-expect-error I expect error here, bruv
                 original_language: source.original_language,
-                // @ts-expect-error
+                // @ts-expect-error I expect error here, bruv
                 title: source.title.translations[originalLanguage] || '',
                 snippet,
-                // @ts-expect-error
+                // @ts-expect-error I expect error here, bruv
                 translations: source.content.translations,
-                // @ts-expect-error
+                // @ts-expect-error I expect error here, bruv
                 domain: source.domain,
-                // @ts-expect-error
+                // @ts-expect-error I expect error here, bruv
                 timestamp: new Date(source.timestamp).toISOString()
             };
         });
 
         return NextResponse.json({
             results,
-            // @ts-expect-error
+            // @ts-expect-error I expect error here, bruv
             total_hits: response.hits.total.value,
             query_time_ms: response.took,
-            // @ts-expect-error
+            // @ts-expect-error I expect error here, bruv
             matched_languages: [...new Set(hits.map(hit => hit._source.original_language))]
         });
     } catch (error) {

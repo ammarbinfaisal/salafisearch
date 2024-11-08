@@ -6,14 +6,14 @@ export async function GET() {
         const stats = await client.indices.stats({ index: 'multilingual_content' });
         const indexInfo = await client.indices.get({ index: 'multilingual_content' });
 
-        // @ts-expect-error
+        // @ts-expect-error I expect error here, bruv
         const documentCount = stats.indices.multilingual_content.total.docs.count;
         
-        // @ts-expect-error
+        // @ts-expect-error I expect error here, bruv
         const indexSizeBytes = stats.indices.multilingual_content.total.store.size_in_bytes;
 
 
-        // @ts-expect-error
+        // @ts-expect-error I expect error here, bruv
         const creationDate = new Date(parseInt(indexInfo.multilingual_content.settings.index.creation_date)).toISOString();
 
         return NextResponse.json({
