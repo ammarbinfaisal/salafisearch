@@ -55,7 +55,7 @@ export async function POST(req: Request) {
                                 should: [
                                     // Original title match
                                     {
-                                        match: {
+                                        match_phrase: {
                                             "title.original": {
                                                 query,
                                                 boost: titleWeight * 2
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
                                     },
                                     // Title translations matches
                                     ...SUPPORTED_LANGUAGES.map(lang => ({
-                                        match: {
+                                        match_phrase: {
                                             [`title.translations.${lang}`]: {
                                                 query,
                                                 boost: titleWeight
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
                                 should: [
                                     // Original content match
                                     {
-                                        match: {
+                                        match_phrase: {
                                             "content.original": {
                                                 query,
                                                 boost: contentWeight
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
                                     },
                                     // Content translations matches
                                     ...SUPPORTED_LANGUAGES.map(lang => ({
-                                        match: {
+                                        match_phrase: {
                                             [`content.translations.${lang}`]: {
                                                 query,
                                                 boost: contentWeight
