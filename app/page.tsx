@@ -1,13 +1,10 @@
 "use client";
 
 import { type FC, useState } from 'react';
-import { Search, Globe2, Sparkles } from 'lucide-react';
+import { Search, Sparkles } from 'lucide-react';
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
