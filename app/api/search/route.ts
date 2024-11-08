@@ -117,7 +117,7 @@ export async function POST(req: Request) {
                                             }
                                         }
                                         
-                                        return titleScore + maxChunkScore;
+                                        return Math.max(0, titleScore + maxChunkScore);
                                     `,
                                     params: {
                                         query_vector: queryEmbedding,
