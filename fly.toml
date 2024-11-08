@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for frontend-dawn-morning-4750 on 2024-11-08T16:39:46+05:30
+# fly.toml app configuration file generated for salafisearch on 2024-11-08T16:53:29+05:30
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'frontend-dawn-morning-4750'
-primary_region = 'fra'
+app = 'salafisearch'
+primary_region = 'bom'
 
 [build]
 
