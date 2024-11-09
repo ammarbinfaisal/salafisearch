@@ -15,7 +15,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: "Salafi Search",
-  description: "Search engine for Salafi content",
+  description: "Search engine for Islamic content",
 };
 
 export default function RootLayout({
