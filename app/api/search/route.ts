@@ -49,80 +49,45 @@ export async function POST(req: Request) {
             query: {
                 bool: {
                     should: [
-                        // Text matches on title
-                        {
-                            bool: {
-                                should: [
-                                    // Original title match
-                                    {
-                                        match_phrase: {
-                                            "title.original": {
-                                                query,
-                                                boost: titleWeight * 2
-                                            }
-                                        }
-                                    },
-                                    // Title translations matches
-                                    ...SUPPORTED_LANGUAGES.map(lang => ({
-                                        match_phrase: {
-                                            [`title.translations.${lang}`]: {
-                                                query,
-                                                boost: titleWeight
-                                            }
-                                        }
-                                    }))
-                                ]
-                            }
-                        },
-                        // Text matches on content
-                        {
-                            bool: {
-                                should: [
-                                    // Original content match
-                                    {
-                                        match_phrase: {
-                                            "content.original": {
-                                                query,
-                                                boost: contentWeight
-                                            }
-                                        }
-                                    },
-                                    // Content translations matches
-                                    ...SUPPORTED_LANGUAGES.map(lang => ({
-                                        match_phrase: {
-                                            [`content.translations.${lang}`]: {
-                                                query,
-                                                boost: contentWeight
-                                            }
-                                        }
-                                    }))
-                                ]
-                            }
-                        },
                         // Vector similarity scoring - matching Python indexer's structure
                         {
                             script_score: {
                                 query: { match_all: {} },
                                 script: {
                                     source: `
-                                        // Score title vector similarity
-                                        double titleScore = cosineSimilarity(params.query_vector, 'title.vector') * params.title_weight;
+                                        double score = 0.0;
                                         
-                                        // Score content chunks vector similarity
-                                        double maxChunkScore = 0;
-                                        if (doc.containsKey('content.chunks')) {
-                                            for (def chunk : doc['content.chunks']) {
-                                                double chunkScore = cosineSimilarity(params.query_vector, chunk.vector) * params.content_weight;
-                                                maxChunkScore = Math.max(maxChunkScore, chunkScore);
-                                            }
+                                        if (doc.containsKey('title.vector')) {
+                                            double titleSim = cosineSimilarity(params.query_vector, 'title.vector');
+                                            score += titleSim * params.title_weight;
                                         }
                                         
-                                        return Math.max(0, titleScore + maxChunkScore);
+                                        return Math.max(0.0, score);
                                     `,
                                     params: {
                                         query_vector: queryEmbedding,
-                                        title_weight: titleWeight,
-                                        content_weight: contentWeight
+                                        title_weight: 10
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            nested: {
+                                path: "content.chunks",
+                                score_mode: "max",
+                                query: {
+                                    script_score: {
+                                        query: { match_all: {} },
+                                        script: {
+                                            source: `
+                                                double sim = cosineSimilarity(params.query_vector, 'content.chunks.vector');
+                                                return Math.max(0, sim * params.content_weight);
+                                            `,
+                                            params: {
+                                                query_vector: queryEmbedding,
+                                                content_weight: 7
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -149,7 +114,8 @@ export async function POST(req: Request) {
                         ])
                     )
                 }
-            }
+            },
+            _source: ['url', 'title', 'content', 'original_language', 'domain', 'timestamp'],
         }
 
         const response = await es.search(searchQuery)

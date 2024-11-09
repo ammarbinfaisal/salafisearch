@@ -1,26 +1,21 @@
 from dataclasses import dataclass
 from typing import List, Optional
 import logging
-from urllib.parse import urlparse, urljoin
-import re
-import json
-import hashlib
-from langdetect import detect
 import time
 
 @dataclass
 class CrawlConfig:
     max_depth: int = 3
     max_pages_per_domain: int = 100000
-    min_content_length: int = 500
-    request_delay: float = 1.0
+    min_content_length: int = 100
+    request_delay: float = 0
     timeout: int = 30
-    max_retries: int = 3
+    max_retries: int = 2
     respect_robots: bool = True
     user_agents: List[str] = None
     excluded_patterns: List[str] = None
     supported_languages: List[str] = None
-    elasticsearch_index: str = "multilingual_content"
+    elasticsearch_index: str = "enhanced"
     allowed_mime_types: List[str] = None
     
     def __post_init__(self):
