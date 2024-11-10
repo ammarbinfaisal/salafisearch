@@ -34,7 +34,7 @@ class RobustCrawler:
         config: CrawlConfig,
         redis_client: Optional[Redis] = None,
         logger: Optional[logging.Logger] = None,
-        max_concurrent_requests: int = 5
+        max_concurrent_requests: int = 15
     ):
         self.config = config
         self.redis = redis_client
@@ -44,51 +44,29 @@ class RobustCrawler:
         self._setup_elasticsearch()
         self._setup_translation_models()
         self.pdf_processor = PDFProcessor(self.logger)
-        self._session = None
         self.ua = UserAgent()
         
         # Request limiting
         self.max_concurrent_requests = max_concurrent_requests
         self.request_semaphore = None  # Will be initialized in initialize()
         self.domain_semaphores = {}  # Domain-specific semaphores
-        
+        self.session = aiohttp.ClientSession()
+
         # Domain request tracking
-        self.domain_last_request = {}  # Track last request time per domain
-        
-        self._session_lock = asyncio.Lock()
+        self.domain_last_request = {} 
+
         # Compile excluded patterns
         self.excluded_patterns = [re.compile(pattern) for pattern in self.config.excluded_patterns]
-
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create an aiohttp ClientSession"""
-        async with self._session_lock:
-            if self._session is None or self._session.closed:
-                if self._session and self._session.closed:
-                    try:
-                        await self._session.close()
-                    except:
-                        pass
-                
-                self._session = aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=self.config.timeout),
-                    headers={
-                        'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Connection': 'keep-alive'
-                    }
-                )
-            return self._session
 
     async def initialize(self):
         """Initialize async components"""
         self.request_semaphore = asyncio.Semaphore(self.max_concurrent_requests)
-        self._session = await self._get_session()
         self.semantic_indexer = await self._setup_semantic_search()
 
     async def cleanup(self):
         """Cleanup async resources"""
-        if self._session and not self._session.closed:
-            await self._session.close()
+        if self.session:
+            await self.session.close()
         await self.es.close()
 
     async def _make_request(self, url: str, redirect_count: int = 0) -> Optional[Tuple[bytes, str]]:
@@ -97,7 +75,6 @@ class RobustCrawler:
         domain_semaphore = self._get_domain_semaphore(domain)
         
         try:
-            session = await self._get_session()
             
             async with self.request_semaphore:
                 async with domain_semaphore:
@@ -106,6 +83,7 @@ class RobustCrawler:
                     if redirect_count >= 10:
                         self.logger.warning(f"Too many redirects for {url}")
                         return None
+                
 
                     for attempt in range(self.config.max_retries):
                         try:
@@ -120,7 +98,7 @@ class RobustCrawler:
                                 'User-Agent': self.ua.get_random_user_agent(),
                             }
                             
-                            async with session.get(
+                            async with self.session.get(
                                 url,
                                 headers=headers,
                                 allow_redirects=False,
@@ -166,11 +144,6 @@ class RobustCrawler:
                                 f"Connection error (attempt {attempt + 1}/{self.config.max_retries}): "
                                 f"{str(e)} for {url}"
                             )
-                            # Reset session on connection errors
-                            async with self._session_lock:
-                                if self._session:
-                                    await self._session.close()
-                                self._session = None
                             
                         except asyncio.TimeoutError:
                             self.logger.warning(
@@ -228,6 +201,7 @@ class RobustCrawler:
         last_request = self.domain_last_request.get(domain, 0)
         elapsed = time.time() - last_request
         if elapsed < self.config.request_delay:
+            print(f"Respecting domain rate limit for {domain} - sleeping for {self.config.request_delay - elapsed} seconds")
             await asyncio.sleep(self.config.request_delay - elapsed)
         self.domain_last_request[domain] = time.time()
 

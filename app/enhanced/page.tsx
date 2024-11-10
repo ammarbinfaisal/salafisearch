@@ -108,7 +108,7 @@ const truncate = (text: string, length: number): string => {
 
 function SearchForm({ query, language }: { query?: string; language?: string }) {
   return (
-    <form action="/" className="space-y-4">
+    <form action="/enhanced" className="space-y-4">
       <div className="relative">
         <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
           <Search className="h-4 w-4 text-gray-400" />
