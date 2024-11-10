@@ -9,7 +9,7 @@ class EnhancedMultilingualIndexer:
         self.index_name = index_name
         
         # Keep the multilingual model
-        self.model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2',
+        self.model = SentenceTransformer('msmarco-MiniLM-L-12-v3',
                                         device='cuda' if torch.cuda.is_available() else 'cpu')
 
     def get_embeddings(self, text: str) -> Optional[list]:

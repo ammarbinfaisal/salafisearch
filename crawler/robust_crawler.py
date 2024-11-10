@@ -16,24 +16,25 @@ from urllib.parse import urljoin, urlparse
 import time
 import logging
 from config_utils import CrawlConfig, PDFProcessor, setup_logging
-from page_rank import PageRankAnalyzer
 from enhanced_index import EnhancedMultilingualIndexer
-
-ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL")
-ELASTICSEARCH_API_KEY = os.getenv("ELASTICSEARCH_API_KEY")
+from random_user_agent.user_agent import UserAgent
 
 codeToLang = {
-    'en': 'English',
-    'ar': 'Arabic',
-    'ur': 'Urdu'
+    "en": "English",
+    "ar": "Arabic",
+    "ur": "Urdu"
 }
+
+ELASTICSEARCH_URL=os.getenv("ELASTICSEARCH_URL")
+ELASTICSEARCH_API_KEY=os.getenv("ELASTICSEARCH_API_KEY")
 
 class RobustCrawler:
     def __init__(
         self,
         config: CrawlConfig,
         redis_client: Optional[Redis] = None,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        max_concurrent_requests: int = 5
     ):
         self.config = config
         self.redis = redis_client
@@ -43,10 +44,163 @@ class RobustCrawler:
         self._setup_elasticsearch()
         self._setup_translation_models()
         self.pdf_processor = PDFProcessor(self.logger)
-        self.session = None
+        self._session = None
+        self.ua = UserAgent()
         
+        # Request limiting
+        self.max_concurrent_requests = max_concurrent_requests
+        self.request_semaphore = None  # Will be initialized in initialize()
+        self.domain_semaphores = {}  # Domain-specific semaphores
+        
+        # Domain request tracking
+        self.domain_last_request = {}  # Track last request time per domain
+        
+        self._session_lock = asyncio.Lock()
         # Compile excluded patterns
         self.excluded_patterns = [re.compile(pattern) for pattern in self.config.excluded_patterns]
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create an aiohttp ClientSession"""
+        async with self._session_lock:
+            if self._session is None or self._session.closed:
+                if self._session and self._session.closed:
+                    try:
+                        await self._session.close()
+                    except:
+                        pass
+                
+                self._session = aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=self.config.timeout),
+                    headers={
+                        'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Connection': 'keep-alive'
+                    }
+                )
+            return self._session
+
+    async def initialize(self):
+        """Initialize async components"""
+        self.request_semaphore = asyncio.Semaphore(self.max_concurrent_requests)
+        self._session = await self._get_session()
+        self.semantic_indexer = await self._setup_semantic_search()
+
+    async def cleanup(self):
+        """Cleanup async resources"""
+        if self._session and not self._session.closed:
+            await self._session.close()
+        await self.es.close()
+
+    async def _make_request(self, url: str, redirect_count: int = 0) -> Optional[Tuple[bytes, str]]:
+        """Make HTTP request with error handling and session management"""
+        domain = urlparse(url).netloc
+        domain_semaphore = self._get_domain_semaphore(domain)
+        
+        try:
+            session = await self._get_session()
+            
+            async with self.request_semaphore:
+                async with domain_semaphore:
+                    await self._respect_domain_rate_limit(domain)
+                    
+                    if redirect_count >= 10:
+                        self.logger.warning(f"Too many redirects for {url}")
+                        return None
+
+                    for attempt in range(self.config.max_retries):
+                        try:
+                            if attempt > 0:
+                                await asyncio.sleep(2 ** attempt)
+                                
+                            if not url or not urlparse(url).scheme or not urlparse(url).netloc:
+                                self.logger.warning(f"Invalid URL format: {url}")
+                                return None
+                                
+                            headers = {
+                                'User-Agent': self.ua.get_random_user_agent(),
+                            }
+                            
+                            async with session.get(
+                                url,
+                                headers=headers,
+                                allow_redirects=False,
+                                proxy=os.getenv("PROXY"),
+                                ssl=False
+                            ) as response:
+                                if response.status == 200:
+                                    try:
+                                        content = await response.read()
+                                        content_type = response.headers.get('content-type', '')
+                                        
+                                        if not content:
+                                            self.logger.warning(f"Empty response from {url}")
+                                            return None
+
+                                        return content, content_type
+                                    except Exception as e:
+                                        self.logger.error(f"Error reading response from {url}: {str(e)}")
+                                        return None
+                                    
+                                elif response.status in [301, 302, 303, 307, 308]:
+                                    redirect_url = response.headers.get('Location')
+                                    
+                                    if redirect_url and not urlparse(redirect_url).netloc:
+                                        base_url = urlparse(url)
+                                        redirect_url = f"{base_url.scheme}://{base_url.netloc}{redirect_url}"
+                                    
+                                    if redirect_url:
+                                        self.logger.info(f"Following redirect from {url} to {redirect_url}")
+                                        return await self._make_request(redirect_url, redirect_count + 1)
+                                    else:
+                                        self.logger.warning(f"Redirect without Location header from {url}")
+                                        return None
+                                
+                                else:
+                                    self.logger.warning(
+                                        f"Request failed (attempt {attempt + 1}/{self.config.max_retries}): "
+                                        f"Status {response.status} for {url}"
+                                    )
+                        
+                        except aiohttp.ClientError as e:
+                            self.logger.warning(
+                                f"Connection error (attempt {attempt + 1}/{self.config.max_retries}): "
+                                f"{str(e)} for {url}"
+                            )
+                            # Reset session on connection errors
+                            async with self._session_lock:
+                                if self._session:
+                                    await self._session.close()
+                                self._session = None
+                            
+                        except asyncio.TimeoutError:
+                            self.logger.warning(
+                                f"Timeout error (attempt {attempt + 1}/{self.config.max_retries}): {url}"
+                            )
+                        except Exception as e:
+                            self.logger.error(f"Unexpected error requesting {url}: {str(e)}")
+                            return None
+                            
+                    return None
+                    
+        except Exception as e:
+            self.logger.error(f"Critical error making request to {url}: {str(e)}")
+            return None
+
+    async def crawl_sites_parallel(self, urls: List[str], chunk_size: int = 3) -> Dict[str, Dict[str, Set[str]]]:
+        """Crawl multiple sites in parallel with controlled concurrency"""
+        results = {}
+        
+        # Process URLs in chunks to avoid overwhelming resources
+        for i in range(0, len(urls), chunk_size):
+            chunk = urls[i:i + chunk_size]
+            tasks = [self.crawl_site(url) for url in chunk]
+            chunk_results = await asyncio.gather(*tasks)
+            results.update(dict(zip(chunk, chunk_results)))
+            
+            # Small delay between chunks
+            await asyncio.sleep(1)
+            
+        return results
 
     def _setup_translation_models(self) -> None:
         """Initialize translation models for supported languages"""
@@ -63,23 +217,26 @@ class RobustCrawler:
                     except Exception as e:
                         self.logger.error(f"Error loading translation model {model_name}: {str(e)}")
 
+    def _get_domain_semaphore(self, domain: str) -> asyncio.Semaphore:
+        """Get or create a domain-specific semaphore"""
+        if domain not in self.domain_semaphores:
+            self.domain_semaphores[domain] = asyncio.Semaphore(self.config.max_concurrent_requests_per_domain)
+        return self.domain_semaphores[domain]
+    
+    async def _respect_domain_rate_limit(self, domain: str) -> None:
+        """Respect domain-specific rate limiting"""
+        last_request = self.domain_last_request.get(domain, 0)
+        elapsed = time.time() - last_request
+        if elapsed < self.config.request_delay:
+            await asyncio.sleep(self.config.request_delay - elapsed)
+        self.domain_last_request[domain] = time.time()
+
     def _setup_elasticsearch(self) -> None:
         """Initialize Elasticsearch client"""
         self.es = AsyncElasticsearch(
             ELASTICSEARCH_URL,
             api_key=ELASTICSEARCH_API_KEY,
         )
-
-    async def initialize(self):
-        """Initialize async components"""
-        self.session = aiohttp.ClientSession()
-        self.semantic_indexer = await self._setup_semantic_search()
-
-    async def cleanup(self):
-        """Cleanup async resources"""
-        if self.session:
-            await self.session.close()
-        await self.es.close()
 
     async def _setup_semantic_search(self) -> EnhancedMultilingualIndexer:
         """Initialize semantic search indexer"""
@@ -112,73 +269,6 @@ class RobustCrawler:
         except Exception as e:
             self.logger.debug(f"URL normalization error: {str(e)}")
             return None
-
-    async def _make_request(self, url: str) -> Optional[Tuple[bytes, str]]:
-        """Make HTTP request with retries and error handling"""
-        for attempt in range(self.config.max_retries):
-            try:
-                # Add delay between retries
-                if attempt > 0:
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                
-                # Check if URL is valid before making request
-                if not url or not urlparse(url).scheme or not urlparse(url).netloc:
-                    self.logger.warning(f"Invalid URL format: {url}")
-                    return None
-                    
-                headers = {
-                    'User-Agent': self.config.user_agents[attempt % len(self.config.user_agents)],
-                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.3',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Connection': 'keep-alive'
-                }
-                
-                async with self.session.get(
-                    url,
-                    headers=headers,
-                    timeout=self.config.timeout,
-                    allow_redirects=True,
-                    ssl=False  # Allow self-signed certificates
-                ) as response:
-                    if response.status == 200:
-                        content = await response.read()
-                        content_type = response.headers.get('content-type', '')
-                        
-                        # Handle empty responses
-                        if not content:
-                            self.logger.warning(f"Empty response from {url}")
-                            return None
-                            
-                        return content, content_type
-                        
-                    elif response.status in [301, 302, 303, 307, 308]:
-                        # Log redirect information
-                        redirect_url = response.headers.get('Location')
-                        self.logger.info(f"Redirect from {url} to {redirect_url}")
-                        return None
-                        
-                    else:
-                        self.logger.warning(
-                            f"Request failed (attempt {attempt + 1}/{self.config.max_retries}): "
-                            f"Status {response.status} for {url}"
-                        )
-                
-            except aiohttp.ClientError as e:
-                self.logger.warning(
-                    f"Connection error (attempt {attempt + 1}/{self.config.max_retries}): "
-                    f"{str(e)} for {url}"
-                )
-            except asyncio.TimeoutError:
-                self.logger.warning(
-                    f"Timeout error (attempt {attempt + 1}/{self.config.max_retries}): {url}"
-                )
-            except Exception as e:
-                self.logger.warning(
-                    f"Unexpected error (attempt {attempt + 1}/{self.config.max_retries}): "
-                    f"{str(e)} for {url}"
-                )
-                
-        return None
 
     def _extract_links(self, soup: BeautifulSoup, base_url: str) -> Set[str]:
         """Extract and normalize all links from a page"""
@@ -367,9 +457,7 @@ class RobustCrawler:
             
             if not self._can_crawl_url(url, depth):
                 return result
-                
-            await self._respect_crawl_delay()
-            
+
             # Make request and handle response
             response = await self._make_request(url)
             if not response:
@@ -454,12 +542,6 @@ class RobustCrawler:
         
         return result
 
-    async def crawl_sites_parallel(self, urls: List[str]) -> Dict[str, Dict[str, Set[str]]]:
-        """Crawl multiple sites in parallel"""
-        tasks = [self.crawl_site(url) for url in urls]
-        results_list = await asyncio.gather(*tasks)
-        return dict(zip(urls, results_list))
-
 async def main():
     logger = setup_logging()
     
@@ -494,21 +576,6 @@ async def main():
     logger.info(f"\nCrawling completed:")
     logger.info(f"Total pages processed: {total_processed}")
     logger.info(f"Total pages failed: {total_failed}")
-
-    # Perform PageRank analysis
-    analyzer = PageRankAnalyzer(logger=logger)
-    analyzer.add_pages(crawl_results)
-    
-    # Get and display top pages
-    print("\nTop 10 Pages by PageRank:")
-    for url, score in analyzer.get_top_pages(10):
-        print(f"{url}: {score:.4f}")
-    
-    # Get and display domain scores
-    print("\nDomain Rankings:")
-    domain_scores = analyzer.get_domain_scores()
-    for domain, score in sorted(domain_scores.items(), key=lambda x: x[1], reverse=True):
-        print(f"{domain}: {score:.4f}")
 
     # Cleanup
     await crawler.cleanup()

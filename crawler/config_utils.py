@@ -9,7 +9,8 @@ class CrawlConfig:
     max_pages_per_domain: int = 100000
     min_content_length: int = 100
     request_delay: float = 0
-    timeout: int = 30
+    timeout: int = 3000
+    max_concurrent_requests_per_domain = 2
     max_retries: int = 2
     respect_robots: bool = True
     user_agents: List[str] = None

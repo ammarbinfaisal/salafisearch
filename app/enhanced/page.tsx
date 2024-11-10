@@ -258,6 +258,7 @@ interface SearchParamsFn {
   page: number;
   pageSize: number;
   INDEX_NAME: string;
+  query: string;
 }
 
 interface HighlightFields {
@@ -268,6 +269,7 @@ interface HighlightFields {
 }
 
 const createSearchQuery = ({
+  query,
   queryEmbedding,
   language,
   page,
@@ -301,12 +303,26 @@ const createSearchQuery = ({
     query: {
       bool: {
         should: [
+          {
+            multi_match: {
+              query,
+              fields: ['title.original^2'],
+              minimum_should_match: '95%'
+            }
+          },
+          {
+            multi_match: {
+              query,
+              fields: ['content.original'],
+              minimum_should_match: '90%'
+            }
+          },
           // Vector search on title
           {
             script_score: {
               query: { match_all: {} },
               script: {
-                source: "Math.max(0.0, cosineSimilarity(params.query_vector, 'title.vector') + 1.0)",
+                source: "Math.max(0.0, cosineSimilarity(params.query_vector, 'title.vector') * 10 + 1.0)",
                 params: { query_vector: queryEmbedding }
               }
             }
@@ -372,6 +388,7 @@ async function performSearch(query: string, page = 1, language: Language = 'all'
     });
 
     const searchQuery  = createSearchQuery({
+      query,
       queryEmbedding,
       language,
       page,
