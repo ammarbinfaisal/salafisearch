@@ -310,13 +310,6 @@ const createSearchQuery = ({
               minimum_should_match: '95%'
             }
           },
-          {
-            multi_match: {
-              query,
-              fields: ['content.original'],
-              minimum_should_match: '90%'
-            }
-          },
           // Vector search on title
           {
             script_score: {
@@ -639,42 +632,6 @@ export default async function Page({
             Enter a search query to begin...
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Error boundary component
-export function ErrorBoundary({
-  error,
-}: {
-  error: Error;
-}) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-white p-6">
-      <Card className="w-full max-w-lg">
-        <CardContent className="p-6">
-          <h2 className="text-xl font-semibold text-red-600 mb-4">Error</h2>
-          <p className="text-gray-600">{error.message}</p>
-          <Button
-            onClick={() => window.location.href = '/'}
-            className="mt-4"
-          >
-            Return to Search
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// Loading state component
-export function Loading() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-white p-6">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading search results...</p>
       </div>
     </div>
   );

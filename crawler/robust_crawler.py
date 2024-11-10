@@ -34,7 +34,7 @@ class RobustCrawler:
         config: CrawlConfig,
         redis_client: Optional[Redis] = None,
         logger: Optional[logging.Logger] = None,
-        max_concurrent_requests: int = 15
+        max_concurrent_requests: int = 40
     ):
         self.config = config
         self.redis = redis_client
@@ -50,7 +50,7 @@ class RobustCrawler:
         self.max_concurrent_requests = max_concurrent_requests
         self.request_semaphore = None  # Will be initialized in initialize()
         self.domain_semaphores = {}  # Domain-specific semaphores
-        self.session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.config.timeout))
 
         # Domain request tracking
         self.domain_last_request = {} 
@@ -69,41 +69,41 @@ class RobustCrawler:
             await self.session.close()
         await self.es.close()
 
-    async def _make_request(self, url: str, redirect_count: int = 0) -> Optional[Tuple[bytes, str]]:
+    async def _make_request(self, url: str) -> Optional[Tuple[bytes, str]]:
         """Make HTTP request with error handling and session management"""
-        domain = urlparse(url).netloc
+        current_url = url
+        redirect_count = 0
+        domain = urlparse(current_url).netloc
         domain_semaphore = self._get_domain_semaphore(domain)
         
         try:
-            
-            async with self.request_semaphore:
-                async with domain_semaphore:
+            async with self.request_semaphore, domain_semaphore:
+                while True:
+                    if redirect_count >= 10:
+                        self.logger.warning(f"Too many redirects, started from {url}")
+                        return None
+                    
                     await self._respect_domain_rate_limit(domain)
                     
-                    if redirect_count >= 10:
-                        self.logger.warning(f"Too many redirects for {url}")
+                    if not current_url or not urlparse(current_url).scheme or not urlparse(current_url).netloc:
+                        self.logger.warning(f"Invalid URL format: {current_url}")
                         return None
-                
 
                     for attempt in range(self.config.max_retries):
                         try:
                             if attempt > 0:
                                 await asyncio.sleep(2 ** attempt)
                                 
-                            if not url or not urlparse(url).scheme or not urlparse(url).netloc:
-                                self.logger.warning(f"Invalid URL format: {url}")
-                                return None
-                                
                             headers = {
                                 'User-Agent': self.ua.get_random_user_agent(),
                             }
                             
                             async with self.session.get(
-                                url,
+                                current_url,
                                 headers=headers,
                                 allow_redirects=False,
                                 proxy=os.getenv("PROXY"),
-                                ssl=False
+                                ssl=False,
                             ) as response:
                                 if response.status == 200:
                                     try:
@@ -111,52 +111,58 @@ class RobustCrawler:
                                         content_type = response.headers.get('content-type', '')
                                         
                                         if not content:
-                                            self.logger.warning(f"Empty response from {url}")
+                                            self.logger.warning(f"Empty response from {current_url}")
                                             return None
 
                                         return content, content_type
                                     except Exception as e:
-                                        self.logger.error(f"Error reading response from {url}: {str(e)}")
+                                        self.logger.error(f"Error reading response from {current_url}: {str(e)}")
                                         return None
                                     
                                 elif response.status in [301, 302, 303, 307, 308]:
                                     redirect_url = response.headers.get('Location')
                                     
                                     if redirect_url and not urlparse(redirect_url).netloc:
-                                        base_url = urlparse(url)
+                                        base_url = urlparse(current_url)
                                         redirect_url = f"{base_url.scheme}://{base_url.netloc}{redirect_url}"
                                     
                                     if redirect_url:
-                                        self.logger.info(f"Following redirect from {url} to {redirect_url}")
-                                        return await self._make_request(redirect_url, redirect_count + 1)
+                                        self.logger.info(f"Following redirect from {current_url} to {redirect_url}")
+                                        current_url = redirect_url
+                                        redirect_count += 1
+                                        # Break the retry loop to handle the redirect
+                                        break
                                     else:
-                                        self.logger.warning(f"Redirect without Location header from {url}")
+                                        self.logger.warning(f"Redirect without Location header from {current_url}")
                                         return None
                                 
                                 else:
                                     self.logger.warning(
                                         f"Request failed (attempt {attempt + 1}/{self.config.max_retries}): "
-                                        f"Status {response.status} for {url}"
+                                        f"Status {response.status} for {current_url}"
                                     )
                         
                         except aiohttp.ClientError as e:
                             self.logger.warning(
                                 f"Connection error (attempt {attempt + 1}/{self.config.max_retries}): "
-                                f"{str(e)} for {url}"
+                                f"{str(e)} for {current_url}"
                             )
                             
                         except asyncio.TimeoutError:
                             self.logger.warning(
-                                f"Timeout error (attempt {attempt + 1}/{self.config.max_retries}): {url}"
+                                f"Timeout error (attempt {attempt + 1}/{self.config.max_retries}): {current_url}"
                             )
-                        except Exception as e:
-                            self.logger.error(f"Unexpected error requesting {url}: {str(e)}")
-                            return None
                             
-                    return None
+                        except Exception as e:
+                            self.logger.error(f"Unexpected error requesting {current_url}: {str(e)}")
+                            return None
                     
+                    # If we've exhausted all retries without success or a redirect
+                    if response.status not in [301, 302, 303, 307, 308]:
+                        return None
+                        
         except Exception as e:
-            self.logger.error(f"Critical error making request to {url}: {str(e)}")
+            self.logger.error(f"Critical error making request to {current_url}: {str(e)}")
             return None
 
     async def crawl_sites_parallel(self, urls: List[str], chunk_size: int = 3) -> Dict[str, Dict[str, Set[str]]]:

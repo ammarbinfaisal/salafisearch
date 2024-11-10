@@ -1,0 +1,211 @@
+{
+    "sites": [
+        {
+            "url": "http://www.thenoblequran.com",
+            "language": "en"
+        },
+        {
+            "url": "https://spubs.com/sps/sp.cfm",
+            "language": "en"
+        },
+        {
+            "url": "http://www.sahihalbukhari.com/sps/sbk/sahihalbukhari.cfm?scn=contents",
+            "language": "en"
+        },
+        {
+            "url": "http://www.sahihmuslim.com/sps/smm/sahihmuslim.cfm?scn=contents",
+            "language": "en"
+        },
+        {
+            "url": "http://www.nawawis40hadith.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.aqidah.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.tawhidfirst.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.abovethethrone.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.prophetmuhammad.name",
+            "language": "en"
+        },
+        {
+            "url": "http://www.islammoses.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.islamjesus.ws",
+            "language": "en"
+        },
+        {
+            "url": "http://www.manhaj.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.salafis.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.takfiris.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.ikhwanis.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.islamagainstextremism.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.themadkhalis.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.aboutatheism.net",
+            "language": "en"
+        },
+        {
+            "url": "http://www.fiqhonline.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.dajjaal.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.ibntaymiyyah.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.shariah.ws",
+            "language": "en"
+        },
+        {
+            "url": "http://www.islam4kids.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.piousmuslim.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.alhajuri.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.madeenah.org",
+            "language": "en"
+        },
+        {
+            "url": "http://www.sunnah.tv",
+            "language": "en"
+        },
+        {
+            "url": "http://www.salafiebooks.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.bidah.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.kharijites.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.asharis.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.maturidis.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.mutazilah.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.shia.bs",
+            "language": "en"
+        },
+        {
+            "url": "http://www.barelwis.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.sayyidqutb.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.nabahani.com",
+            "language": "en"
+        },
+        {
+            "url": "http://www.binbaz.co.uk",
+            "language": "en"
+        },
+        {
+            "url": "http://www.albani.co.uk",
+            "language": "en"
+        },
+        {
+            "url": "http://www.binuthaymin.co.uk",
+            "language": "en"
+        },
+        {
+            "url": "http://www.rabee.co.uk",
+            "language": "en"
+        },
+        {
+            "url": "http://salafitalk.net/st/",
+            "language": "en"
+        },
+        {
+            "url": "http://www.fawzan.co.uk",
+            "language": "en"
+        },
+        {
+            "url": "http://www.muqbil.co.uk",
+            "language": "en"
+        },
+        {
+            "url": "http://www.ubayd.co.uk",
+            "language": "en"
+        },
+        {
+            "url": "https://abuiyaad.com/websites",
+            "language": "en"
+        },
+
+        {
+            "url": "https://binbaz.org.sa",
+            "language": "ar"
+        },
+        {
+             "url": "https://www.muqbel.net/",
+            "language": "ar"    
+        },
+        {
+            "url": "https://www.alfawzan.af.org.sa/ar",
+            "language": "ar"
+        },
+
+        {
+            "url": "https://rabee.net/",
+            "language": "ar"
+        }
+    ],
+    "indexing": {
+        "batch_size": 256,
+        "timeout": 30,
+        "retry_attempts": 2
+    }
+}
